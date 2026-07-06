@@ -1,0 +1,5 @@
+name = "pvm-spec"
+defaultTargets = ["Pvm"]
+
+[[lean_lib]]
+name = "Pvm"
