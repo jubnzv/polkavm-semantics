@@ -14,7 +14,10 @@ A PVM model derived from the Graypaper; some things are deliberately simplified/
 * **Exit state** — on `halt`/`panic` the Graypaper zeroes the returned instruction counter; the model leaves `pc` at the offending instruction.
 * **Execution is fuel-bounded** — a `cont` result means fuel was exhausted, not a property of the machine.
 
-Where the Graypaper is ambiguous the model makes an explicit judgment call (grep `SPEC-AMBIGUITY` in `Pvm/Spec`): `𝔏` (basic-block start) defaults to `0` for malformed programs, the host id `immed_X` is truncated to its low 32 bits, and the memory access tag collapses the two permission sets as noted above.
+Where the Graypaper is ambiguous the model makes an explicit judgment call (grep `SPEC-AMBIGUITY` in `Pvm/Spec`):
+* `𝔏` (basic-block start) defaults to `0` for malformed programs
+* the host id `immed_X` is truncated to its low 32 bits
+* the memory access tag collapses the two permission sets as noted above
 
 ## Use-cases
 To check the correctness of the implementation(s). For example:
