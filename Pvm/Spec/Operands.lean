@@ -1,7 +1,7 @@
 /-
 Operand decoding, GP §"Instruction Tables" preambles. GP's `ζ_{ı+1+k}` is `arg p x k` here.
 -/
-import Pvm.Common.Types
+import Pvm.Common.Ast
 
 namespace Pvm.Spec
 open Pvm
@@ -71,5 +71,40 @@ def twoRegTwoImm (p : Program) (x : Site) : Reg × Reg × Val × Val :=
 /-- `(r_A, r_B, r_D)`. -/
 def threeReg (p : Program) (x : Site) : Reg × Reg × Reg :=
   (regLo (arg p x 0), regHi (arg p x 0), regLo (arg p x 1))
+
+/-- An operand group bound to the mnemonic it builds. -/
+abbrev Op := Option (Program → Site → Instr)
+-- GP ~281
+def g0 (c : Instr) : Op := some fun _ _ => c
+-- GP ~297
+def gI (f : Val → Instr) : Op := some fun p x => f (oneImm p x)
+-- GP ~315
+def gRE (f : Reg → Val → Instr) : Op := some fun p x => let (a, v) := regExtImm p x; f a v
+-- GP ~332
+def gII (f : Val → Val → Instr) : Op := some fun p x => let (u, v) := twoImm p x; f u v
+-- GP ~355
+def gO (f : Val → Instr) : Op := some fun p x => f (oneOffset p x)
+-- GP ~373
+def gRI (f : Reg → Val → Instr) : Op := some fun p x => let (a, v) := regImm p x; f a v
+-- GP ~406
+def gRII (f : Reg → Val → Val → Instr) : Op :=
+  some fun p x => let (a, u, v) := regTwoImm p x; f a u v
+-- GP ~432
+def gRIO (f : Reg → Val → Val → Instr) : Op :=
+  some fun p x => let (a, u, v) := regImmOffset p x; f a u v
+-- GP ~465
+def gRR (f : Reg → Reg → Instr) : Op := some fun p x => let (d, a) := twoReg p x; f d a
+-- GP ~498
+def gRRI (f : Reg → Reg → Val → Instr) : Op :=
+  some fun p x => let (a, b, v) := twoRegImm p x; f a b v
+-- GP ~570
+def gRRO (f : Reg → Reg → Val → Instr) : Op :=
+  some fun p x => let (a, b, v) := twoRegOffset p x; f a b v
+-- GP ~599
+def gRRII (f : Reg → Reg → Val → Val → Instr) : Op :=
+  some fun p x => let (a, b, u, v) := twoRegTwoImm p x; f a b u v
+-- GP ~629
+def gRRR (f : Reg → Reg → Reg → Instr) : Op :=
+  some fun p x => let (a, b, d) := threeReg p x; f a b d
 
 end Pvm.Spec

@@ -21,41 +21,6 @@ def skip (p : Program) (i : Nat) : Nat :=
 /-- ℓ ≡ skip(ı) (GP ~277). -/
 def site (p : Program) (i : Nat) : Site := { i := i, a := i + 1, l := skip p i }
 
-abbrev Op := Option (Program → Site → Instr)
-
--- GP ~281
-private def g0 (c : Instr) : Op := some fun _ _ => c
--- GP ~297
-private def gI (f : Val → Instr) : Op := some fun p x => f (oneImm p x)
--- GP ~315
-private def gRE (f : Reg → Val → Instr) : Op := some fun p x => let (a, v) := regExtImm p x; f a v
--- GP ~332
-private def gII (f : Val → Val → Instr) : Op := some fun p x => let (u, v) := twoImm p x; f u v
--- GP ~355
-private def gO (f : Val → Instr) : Op := some fun p x => f (oneOffset p x)
--- GP ~373
-private def gRI (f : Reg → Val → Instr) : Op := some fun p x => let (a, v) := regImm p x; f a v
--- GP ~406
-private def gRII (f : Reg → Val → Val → Instr) : Op :=
-  some fun p x => let (a, u, v) := regTwoImm p x; f a u v
--- GP ~432
-private def gRIO (f : Reg → Val → Val → Instr) : Op :=
-  some fun p x => let (a, u, v) := regImmOffset p x; f a u v
--- GP ~465
-private def gRR (f : Reg → Reg → Instr) : Op := some fun p x => let (d, a) := twoReg p x; f d a
--- GP ~498
-private def gRRI (f : Reg → Reg → Val → Instr) : Op :=
-  some fun p x => let (a, b, v) := twoRegImm p x; f a b v
--- GP ~570
-private def gRRO (f : Reg → Reg → Val → Instr) : Op :=
-  some fun p x => let (a, b, v) := twoRegOffset p x; f a b v
--- GP ~599
-private def gRRII (f : Reg → Reg → Val → Val → Instr) : Op :=
-  some fun p x => let (a, b, u, v) := twoRegTwoImm p x; f a b u v
--- GP ~629
-private def gRRR (f : Reg → Reg → Reg → Instr) : Op :=
-  some fun p x => let (a, b, d) := threeReg p x; f a b d
-
 /-- U: opcode ↦ operand group and mnemonic (GP ~134, ~274). -/
 def op : Nat → Op
   | 0   => g0 .trap
