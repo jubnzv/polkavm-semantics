@@ -1,6 +1,5 @@
 /-
-ReviveV1: the GP blob ⟨c, k, j⟩, skip (~90), ζ (~102), ϖ (~136), 𝔏 (~142) and operand groups
-(~274), with its own opcode numbering in place of the leftmost column of the GP tables.
+ReviveV1: the GP encoding (~79–142) and operand groups (~274), with its own opcode numbers.
 -/
 import Pvm.Common.Isa
 import Pvm.Spec.Operands
@@ -8,20 +7,20 @@ import Pvm.Spec.Operands
 namespace Pvm.Revive
 open Pvm Pvm.Spec
 
-/-- `(k ⌢ [1, 1, …])_i` (GP eq:skip). -/
+/-- (k ⌢ [1, 1, …])_i (GP ~90). -/
 def kPad (p : Program) (i : Nat) : Bool := p.bitmask[i]?.getD true
 
-/-- `k_i = 1` (GP ~68, ~136). -/
+/-- k_i = 1 (GP ~66). -/
 def kSet (p : Program) (i : Nat) : Bool := p.bitmask[i]?.getD false
 
-/-- skip (GP eq:skip). -/
+/-- skip (GP ~90). -/
 def skip (p : Program) (i : Nat) : Nat :=
   ((List.range 24).find? fun j => kPad p (i + 1 + j)).getD 24
 
-/-- ℓ ≡ skip(ı) (GP ~277). -/
+/-- Arguments at ı + 1, ℓ = skip(ı) (GP ~278). -/
 def site (p : Program) (i : Nat) : Site := { i := i, a := i + 1, l := skip p i }
 
-/-- U: opcode ↦ operand group and mnemonic (GP ~134, ~274). -/
+/-- Opcode ↦ operand group and mnemonic; defined exactly on U (GP ~134). -/
 def op : Nat → Op
   | 0   => g0 .trap
   | 1   => g0 .fallthrough
@@ -163,29 +162,27 @@ def op : Nat → Op
   | 230 => gRRR .minU
   | _   => none
 
-/-- `c_n` with its operands read from ζ (GP eq:instructions, ~274). -/
+/-- The instruction with opcode c_n (GP ~274). -/
 def ins (p : Program) (n : Nat) : Option Instr :=
   p.code[n]? >>= fun c => (op c.toNat).map (· p (site p n))
 
-/-- `k_n = 1 ∧ c_n ∈ U` (GP ~136). -/
+/-- k_n = 1 ∧ c_n ∈ U (GP ~136). -/
 def inU (p : Program) (n : Nat) : Bool := kSet p n && (ins p n).isSome
 
-/-- `n ∈ ℕ_{|c|} ∧ k_n = 1 ∧ c_n ∈ T` (GP ~108, ~136). -/
+/-- k_n = 1 ∧ c_n ∈ T (GP ~136). -/
 def inT (p : Program) (n : Nat) : Bool := kSet p n && (ins p n).any Instr.isTerminator
 
 /-- v_inst (GP ~66). -/
 def decode (p : Program) (pc : Addr) : Option Instr :=
   if p.bitmask.size == p.code.size && kSet p pc.toNat then ins p pc.toNat else none
 
-/-- ϖ (GP ~136); skip ≤ 24 (GP eq:skip) bounds `n` to `[j - 25, j)`. -/
+/-- ϖ (GP ~136); skip ≤ 24 puts n in [j - 25, j). -/
 def isBlockStart (p : Program) (j : Nat) : Bool :=
   inU p j && (j == 0 || (List.range (min j 25)).any fun d =>
     let n := j - 1 - d
     inT p n && n + 1 + skip p n == j)
 
--- v_blob(c, k, 0) (GP ~57) gives 0 ∈ ϖ, so `max ∅` cannot arise in the GP. v_blob is not
--- modelled; take 0.
-/-- 𝔏 (GP ~142); ϖ ⊆ ℕ_{|c|}. -/
+/-- 𝔏 (GP ~142); `max ∅` ↦ 0, unreachable under v_blob (GP ~57). -/
 def basicBlockStart (p : Program) (pc : Addr) : Addr :=
   BitVec.ofNat 32
     (((List.range (min (pc.toNat + 1) p.code.size)).reverse.find? (isBlockStart p)).getD 0)

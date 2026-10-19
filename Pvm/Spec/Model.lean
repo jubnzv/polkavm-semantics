@@ -1,7 +1,7 @@
 /-
 Spec model — exec dispatch and `Pvm.Spec.model : Isa → Pvm.PvmModel`.
 
-Non-control instructions take the default transition ε = cont, ı' = ı + 1 + skip(ı) (GP ~201).
+Non-control instructions take the default transition ε = cont, ı' = `nextPc` ı (GP ~201).
 `model` is a def, not an `instance`, so it coexists with other models.
 -/
 import Pvm.Common.Interface

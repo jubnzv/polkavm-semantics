@@ -153,9 +153,7 @@ inductive Instr
   | minU            (a b d : Reg)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Block-termination instructions (GP set `T`): those that may set the instruction
-    counter to something other than `ı + 1 + skip(ı)`, plus `trap`/`fallthrough`.
-    Note `unlikely` is *not* a terminator. -/
+/-- T (GP ~108). -/
 def Instr.isTerminator : Instr → Bool
   | .trap | .fallthrough
   | .jump _ | .jumpInd _ _

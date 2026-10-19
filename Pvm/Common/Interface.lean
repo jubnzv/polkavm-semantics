@@ -63,8 +63,8 @@ def run (p : Program) : Nat → State → Exit × State
     | (e,     s') => (e, s')
 
 /-- Ψ_H (GP §752). On `host h`, service it with `f`; if that continues, resume at
-    `ı'' = ı' + 1 + skip(ı')` (`nextPc`), else propagate. `callBudget`/`runFuel` bound it for
-    totality. The JAM context `X` is omitted. -/
+    ı'' = `nextPc` ı', else propagate. `callBudget`/`runFuel` bound it for totality. The JAM
+    context `X` is omitted. -/
 def runHost (p : Program) (runFuel : Nat)
     (f : BitVec 32 → State → Exit × State) : Nat → State → Exit × State
   | 0,            s => (.cont, s)
