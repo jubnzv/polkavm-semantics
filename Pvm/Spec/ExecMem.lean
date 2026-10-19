@@ -1,15 +1,9 @@
 /-
-Spec model — memory load/store instructions, including the memory-access exception ε^μ.
-Transcribed from `graypaper/text/pvm.tex` §"Instruction Tables":
-  two-imm stores (30–33), one-reg-one-imm loads/stores (52–62),
-  one-reg-two-imm stores (70–73), two-reg-one-imm loads/stores (120–130);
-  ε^μ (~171–180); the `<2^16 ⇒ panic` rule (~168).
-
-Functions return `Exit × State`; on fault/panic the PRIOR state is returned (never mutate).
-On `cont` the pc is left unchanged here — the Model advances it (GP eq. ~201).
+Spec model — loads/stores and ε^μ (~171–180), with the `< 2^16 ⇒ panic` rule (~168).
+On fault/panic the PRIOR state is returned. On `cont` the Model advances the pc.
 -/
 import Pvm.Common.Ast
-import Pvm.Spec.Decode
+import Pvm.Spec.Operands
 
 namespace Pvm.Spec
 open Pvm
@@ -78,14 +72,14 @@ def doStore (s : State) (addr : Addr) (n : Nat) (v : Nat) : Exit × State :=
   | .cont => (.cont, { s with mem := writeBytesLE s.mem addr n v })
   | e => (e, s)
 
-/-! ## Two immediates — stores (30–33): addr = ν_X, value = ν_Y -/
+/-! ## Two immediates — stores: addr = ν_X, value = ν_Y -/
 
 def execStoreImmU8  (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 1 val.toNat
 def execStoreImmU16 (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 2 val.toNat
 def execStoreImmU32 (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 4 val.toNat
 def execStoreImmU64 (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 8 val.toNat
 
-/-! ## One register & one immediate — loads/stores (52–62): addr = immed_X -/
+/-! ## One register & one immediate — loads/stores: addr = immed_X -/
 
 def execLoadU8  (s : State) (a : Reg) (x : Val) : Exit × State := doLoad s a (x.setWidth 32) 1 false
 def execLoadI8  (s : State) (a : Reg) (x : Val) : Exit × State := doLoad s a (x.setWidth 32) 1 true
@@ -99,7 +93,7 @@ def execStoreU16 (s : State) (a : Reg) (x : Val) : Exit × State := doStore s (x
 def execStoreU32 (s : State) (a : Reg) (x : Val) : Exit × State := doStore s (x.setWidth 32) 4 (s.reg a).toNat
 def execStoreU64 (s : State) (a : Reg) (x : Val) : Exit × State := doStore s (x.setWidth 32) 8 (s.reg a).toNat
 
-/-! ## One register & two immediates — stores (70–73): addr = reg_A + ν_X, value = ν_Y -/
+/-! ## One register & two immediates — stores: addr = reg_A + ν_X, value = ν_Y -/
 
 def execStoreImmIndU8  (s : State) (a : Reg) (x val : Val) : Exit × State :=
   doStore s ((s.reg a + x).setWidth 32) 1 val.toNat
@@ -110,7 +104,7 @@ def execStoreImmIndU32 (s : State) (a : Reg) (x val : Val) : Exit × State :=
 def execStoreImmIndU64 (s : State) (a : Reg) (x val : Val) : Exit × State :=
   doStore s ((s.reg a + x).setWidth 32) 8 val.toNat
 
-/-! ## Two registers & one immediate — loads/stores (120–130): addr = reg_B + ν_X -/
+/-! ## Two registers & one immediate — loads/stores: addr = reg_B + ν_X -/
 
 -- stores: value source = reg_A
 def execStoreIndU8  (s : State) (a b : Reg) (x : Val) : Exit × State :=

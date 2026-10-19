@@ -62,7 +62,8 @@ structure State where
 @[inline] def State.setReg (s : State) (r : Reg) (v : Val) : State :=
   { s with regs := fun r' => if r' = r then v else s.regs r' }
 
-/-- A decoded PVM program blob: instruction data `c`, opcode bitmask `k`, jump table `j`. -/
+/-- A decoded PVM program blob: instruction data `c`, opcode bitmask `k`, jump table `j`.
+    `bitmask` is empty for an ISA that does not use one. -/
 structure Program where
   code      : Array UInt8
   bitmask   : Array Bool

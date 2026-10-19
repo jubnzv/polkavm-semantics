@@ -1,83 +1,78 @@
 /-
-Spec model — gasCost.
-Transcribed from `graypaper/text/pvm.tex` §"Gas Cost Tables" (~1134), the `cost_cycles`
-column only, plus the memory cost `𝔪 = 25` (~1169) and branch cost `𝔟` (~1174).
-
-This is a naive cycle-sum, NOT the full 𝔛 gas model (GP §"Gas Cost Model", ~883): the full
-model additionally runs an out-of-order pipeline simulation and applies `max(cycles - 3, 1)`
-(GP eq:gascostforblock ~998) — NONE of that is done here.
+Spec model — gasCost: the `cost_cycles` column of GP §"Gas Cost Tables" (~1134) summed over a
+basic block. NOT the GP 𝔛 model (no pipeline simulation, no `max(cycles - 3, 1)`, ~998).
 -/
-import Pvm.Spec.Decode
+import Pvm.Common.Isa
 
 namespace Pvm.Spec
 open Pvm
 
-/-- Resolved target index of a branch (GP `ı_target`), for the `𝔟` cost. -/
-def branchTargetIdx : Instr → Option Nat
-  | .branchEqImm _ _ t  | .branchNeImm _ _ t
-  | .branchLtUImm _ _ t | .branchLeUImm _ _ t | .branchGeUImm _ _ t | .branchGtUImm _ _ t
-  | .branchLtSImm _ _ t | .branchLeSImm _ _ t | .branchGeSImm _ _ t | .branchGtSImm _ _ t
-  | .branchEq _ _ t  | .branchNe _ _ t
-  | .branchLtU _ _ t | .branchLtS _ _ t | .branchGeU _ _ t | .branchGeS _ _ t => some t.toNat
-  | _ => none
+-- SPEC-AMBIGUITY(pvm.tex ~1175): 𝔟 tests the opcode octet ζ_j, which is 0 (`trap`) past the end
+-- of `c`. Read through the ISA, no instruction at `j` counts as `trap`.
+def trapOrUnlikelyAt (d : Isa) (p : Program) (j : Nat) : Bool :=
+  j ≥ 2 ^ 32 ||
+    match d.decode p (BitVec.ofNat 32 j) with
+    | none | some .trap | some .unlikely => true
+    | _ => false
 
-/-- GP `𝔟` (~1174): cost 1 if the fallthrough or the branch target opcode byte is
-    `unlikely` (2) or `trap` (0); else 20. -/
-def bcost (p : Program) (i : Nat) : Nat :=
-  let ft := i + 1 + skip p i
-  let tgt := match decode p (BitVec.ofNat 32 i) with
-             | some instr => (branchTargetIdx instr).getD ft
-             | none => ft
-  let isUT := fun (j : Nat) => let z := (codeByte p j).toNat; z == 0 || z == 2
-  if isUT ft || isUT tgt then 1 else 20
+/-- 𝔟 (~1175). -/
+def bcost (d : Isa) (p : Program) (pc : Addr) (t : Val) : Nat :=
+  if trapOrUnlikelyAt d p (d.nextPc p pc).toNat || trapOrUnlikelyAt d p t.toNat then 1 else 20
 
-/-- GP `cost_cycles` (~1225): cycles for the instruction whose opcode byte is at `i`. -/
-def costCycles (p : Program) (i : Nat) : Nat :=
-  let op := (codeByte p i).toNat
-  if op == 100 then 0                                                  -- move_reg
-  else if op == 2 then 40                                              -- unlikely
-  else if op == 10 then 100                                            -- ecalli
-  else if op == 50 || op == 180 then 22                               -- jump_ind, load_imm_jump_ind
-  else if op == 40 || op == 80 then 15                                -- jump, load_imm_jump
-  else if op == 0 || op == 1 then 2                                   -- trap, fallthrough
-  else if (81 ≤ op && op ≤ 90) || (170 ≤ op && op ≤ 175) then bcost p i  -- branches: 𝔟
-  -- memory: 𝔪 = 25 (loads/stores)
-  else if (30 ≤ op && op ≤ 33) || (52 ≤ op && op ≤ 62)
-       || (70 ≤ op && op ≤ 73) || (120 ≤ op && op ≤ 130) then 25
-  -- div/rem
-  else if (193 ≤ op && op ≤ 196) || (203 ≤ op && op ≤ 206) then 60
-  -- multiplies
-  else if op == 215 then 6                                            -- mul_upper_s_u
-  else if op == 192 || op == 135 || op == 213 || op == 214 then 4     -- mul_32, mul_imm_32, mul_upper_u/s
-  else if op == 202 || op == 150 then 3                               -- mul_64, mul_imm_64
-  -- comparisons-to-register
-  else if op == 216 || op == 217 || (136 ≤ op && op ≤ 137) || (142 ≤ op && op ≤ 143) then 3
-  else if (227 ≤ op && op ≤ 230) then 3                               -- max/min
-  else if (218 ≤ op && op ≤ 219) || (147 ≤ op && op ≤ 148) then 2     -- cmov / cmov_imm
-  else if op == 224 || op == 225 || op == 226 || op == 154 then 2     -- and_inv, or_inv, xnor, neg_add_imm_64
-  else if op == 141 then 3                                            -- neg_add_imm_32
-  else if op == 51 || op == 20 then 1                                 -- load_imm, load_imm_64
-  -- 32-bit two-cycle ALU / shift-rotate
-  else if op == 190 || op == 191 then 2                              -- add_32, sub_32
-  else if op == 131 || op == 139 || op == 140 || op == 138 || op == 160 then 2  -- *_imm_32
-  else if op == 105 || op == 106 then 2                              -- trailing_zero_bits_*
-  else if (197 ≤ op && op ≤ 199) || op == 221 || op == 223 then 2    -- shlo/shar/rot _32
-  else if (144 ≤ op && op ≤ 146) || op == 161 then 2                 -- *_imm_alt_32
-  -- one-cycle ALU / shift-rotate / bit ops (everything else valid)
-  else if op == 200 || op == 201 || op == 210 || op == 211 || op == 212 then 1  -- add/sub/and/xor/or _64
-  else 1
+/-- `cost_cycles`; `𝔪 = 25` (~1169). -/
+def costCycles (d : Isa) (p : Program) (pc : Addr) : Instr → Nat
+  | .moveReg .. => 0
+  | .and .. | .xor .. | .or .. | .add64 .. | .sub64 .. => 1
+  | .add32 .. | .sub32 .. => 2
+  | .andImm .. | .xorImm .. | .orImm .. | .addImm64 .. | .shloRImm64 .. | .sharRImm64 ..
+  | .shloLImm64 .. | .rotR64Imm .. | .reverseBytes .. => 1
+  | .addImm32 .. | .shloRImm32 .. | .sharRImm32 .. | .shloLImm32 .. | .rotR32Imm .. => 2
+  | .countSetBits64 .. | .countSetBits32 .. | .leadingZeroBits64 .. | .leadingZeroBits32 ..
+  | .signExtend8 .. | .signExtend16 .. | .zeroExtend16 .. => 1
+  | .trailingZeroBits64 .. | .trailingZeroBits32 .. => 2
+  | .shloL64 .. | .shloR64 .. | .sharR64 .. | .rotL64 .. | .rotR64 .. => 1
+  | .shloL32 .. | .shloR32 .. | .sharR32 .. | .rotL32 .. | .rotR32 .. => 2
+  | .shloLImmAlt64 .. | .shloRImmAlt64 .. | .sharRImmAlt64 .. | .rotR64ImmAlt .. => 1
+  | .shloLImmAlt32 .. | .shloRImmAlt32 .. | .sharRImmAlt32 .. | .rotR32ImmAlt .. => 2
+  | .setLtU .. | .setLtS .. | .setLtUImm .. | .setLtSImm .. | .setGtUImm .. | .setGtSImm .. => 3
+  | .cmovIz .. | .cmovNz .. | .cmovIzImm .. | .cmovNzImm .. => 2
+  | .max .. | .maxU .. | .min .. | .minU .. => 3
+  | .loadIndU8 .. | .loadIndI8 .. | .loadIndU16 .. | .loadIndI16 .. | .loadIndU32 ..
+  | .loadIndI32 .. | .loadIndU64 ..
+  | .loadU8 .. | .loadI8 .. | .loadU16 .. | .loadI16 .. | .loadU32 .. | .loadI32 .. | .loadU64 ..
+  | .storeImmIndU8 .. | .storeImmIndU16 .. | .storeImmIndU32 .. | .storeImmIndU64 ..
+  | .storeIndU8 .. | .storeIndU16 .. | .storeIndU32 .. | .storeIndU64 ..
+  | .storeImmU8 .. | .storeImmU16 .. | .storeImmU32 .. | .storeImmU64 ..
+  | .storeU8 .. | .storeU16 .. | .storeU32 .. | .storeU64 .. => 25
+  | .branchEq _ _ t | .branchNe _ _ t | .branchLtU _ _ t | .branchLtS _ _ t
+  | .branchGeU _ _ t | .branchGeS _ _ t
+  | .branchEqImm _ _ t | .branchNeImm _ _ t | .branchLtUImm _ _ t | .branchLeUImm _ _ t
+  | .branchGeUImm _ _ t | .branchGtUImm _ _ t | .branchLtSImm _ _ t | .branchLeSImm _ _ t
+  | .branchGeSImm _ _ t | .branchGtSImm _ _ t => bcost d p pc t
+  | .divU32 .. | .divS32 .. | .remU32 .. | .remS32 ..
+  | .divU64 .. | .divS64 .. | .remU64 .. | .remS64 .. => 60
+  | .andInv .. | .orInv .. | .xnor .. | .negAddImm64 .. => 2
+  | .negAddImm32 .. => 3
+  | .loadImm .. | .loadImm64 .. => 1
+  | .mul64 .. | .mulImm64 .. => 3
+  | .mul32 .. | .mulImm32 .. | .mulUpperSS .. | .mulUpperUU .. => 4
+  | .mulUpperSU .. => 6
+  | .trap | .fallthrough => 2
+  | .unlikely => 40
+  | .jump .. | .loadImmJump .. => 15
+  | .jumpInd .. | .loadImmJumpInd .. => 22
+  | .ecalli .. => 100
 
-/-- Sum `cost_cycles` over the instructions of the block starting at `i`, walking via
-    `skip` until (and including) a terminator. Fuel-bounded for totality. -/
-def blockCost (p : Program) (i fuel : Nat) : Nat :=
-  match fuel with
+-- SPEC-AMBIGUITY: no instruction at `pc` panics like `trap`, so it is costed as one and ends the walk.
+def blockCost (d : Isa) (p : Program) (pc : Addr) : Nat → Nat
   | 0 => 0
   | fuel + 1 =>
-    let c := costCycles p i
-    if opcodeIsTerminator (codeByte p i) then c
-    else c + blockCost p (i + 1 + skip p i) fuel
+    match d.decode p pc with
+    | none => costCycles d p pc .trap
+    | some i =>
+      if i.isTerminator then costCycles d p pc i
+      else costCycles d p pc i + blockCost d p (d.nextPc p pc) fuel
 
-/-- GP `ζ^Δ`: naive cycle-sum of the block starting at `pc`. -/
-def gasCost (p : Program) (pc : Addr) : Nat := blockCost p pc.toNat (p.code.size + 2)
+def gasCost (d : Isa) (p : Program) (pc : Addr) : Nat := blockCost d p pc (p.code.size + 1)
 
 end Pvm.Spec
