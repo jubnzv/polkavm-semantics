@@ -42,12 +42,12 @@ def chargeBlock (p : Program) (s : State) : Exit × State :=
 
 /-- Single-step state transition Ψ₁. -/
 def step (p : Program) (s : State) : Exit × State :=
-  match chargeBlock p s with
-  | (.oog, s') => (.oog, s')
-  | (_,   s₁) =>
-    match M.isa.decode p s₁.pc with
-    | none       => (.panic, s₁)        -- invalid instruction
-    | some instr =>
+  match M.isa.decode p s.pc with
+  | none       => (.panic, s)        -- GP Ψ (~36): deblob(p, ı) fails before Ψ₁, ξ unchanged
+  | some instr =>
+    match chargeBlock p s with
+    | (.oog, s') => (.oog, s')
+    | (_,   s₁) =>
       let (e, s₂) := M.exec p instr s₁
       -- charged-flag reset: drop it iff a block terminator continued / made a host call,
       -- so the next basic block is charged afresh (GP eq. for `𝔤*`).

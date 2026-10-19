@@ -88,7 +88,7 @@ def stdInit (sec : Sections) (initPc : Addr) (gas : Int) : State :=
   { pc := initPc, gas := gas, charged := false,
     regs := stdInitRegs sec.args.size, mem := stdInitMem sec }
 
--- Sanity: the init register constants are exactly the GP / polkavm values.
+-- GP eq:registers (~844).
 example : raInit = 0xFFFF0000 := by native_decide
 example : spInit = 0xFEFE0000 := by native_decide
 example : a0Init = 0xFEFF0000 := by native_decide
