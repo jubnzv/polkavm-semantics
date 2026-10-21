@@ -10,20 +10,16 @@ open Pvm
 
 /-! ## ε^μ — memory-access exception (GP ~168, ~171–180) -/
 
--- SPEC-AMBIGUITY(pvm.tex eq. ~178): the shared `Access` tag collapses the GP's two
--- independent permission sets readable(μ) and writable(μ) into one of {inaccessible,r,w}.
--- Read `r` = read-only, `w` = read-write (matches standard-init: W sections are heap/stack);
--- hence readable = {r,w}, writable = {w}.
+-- GP access per page is W, R or ∅: readable(μ) = {R, W}, writable(μ) = {W} (overview.tex ~178).
 def isReadable : Access → Bool | .r => true | .w => true | .inaccessible => false
 def isWritable : Access → Bool | .w => true | _ => false
 
--- GP ~168 / pvm.tex line 3: the first 64KB (< 2^16) is ALWAYS inaccessible, regardless of the
--- page tag; any access there contributes to 𝐱 (and, being lowest, forces a panic).
+-- GP ~168 (and the TODO #446 atop pvm.tex): an index below 2^16 is ALWAYS inaccessible,
+-- regardless of the page tag, so it lands in 𝐱 and, being lowest, forces a panic.
 -- GP ~178: μ is CYCLIC (μ^↺), so the constituent indices 𝐫/𝐰 are RAW (unwrapped) naturals
 -- {A, A+1, …} (A+i may reach 2^32). Accessibility is looked up at the cyclic address (x mod 2^32),
 -- but the index kept in 𝐱 is the RAW x — `min(𝐱)` is over raw indices, reduced mod 2^32 only at the
--- panic/fault test (GP eq. ~175–178). Pre-wrapping each byte before the min was a bug: it reports a
--- high-address fault as a spurious low-address panic when an access wraps past 2^32.
+-- panic/fault test (GP eq. ~175–178).
 def addrBadRead (m : Mem) (x : Nat) : Bool :=
   x % 2 ^ 32 < zoneSize || !(isReadable (m.accessAt (BitVec.ofNat 32 x)))
 def addrBadWrite (m : Mem) (x : Nat) : Bool :=

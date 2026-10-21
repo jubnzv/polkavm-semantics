@@ -1,5 +1,5 @@
 /-
-Bit-width helpers shared by both PVM models.
+Bit-width helpers.
 Graypaper App. A: sign/unsigned conversions and sign extension (eqs. for `𝒵`, `sext`).
 -/
 namespace Pvm

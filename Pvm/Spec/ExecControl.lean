@@ -39,8 +39,8 @@ def execUnlikely (d : Isa) (p : Program) (s : State) : Exit × State :=
 
 /-! ## One immediate -/
 
--- SPEC-AMBIGUITY(pvm.tex ~311): the host id is `immed_X` (a 64-bit value); `Exit.host` carries
--- BitVec 32 and l_X ≤ 4, so take its low 32 bits. pc stays at the ecalli (GP ~77).
+-- The GP's host id is the 64-bit immed_X (~74, ~311); `Exit.host` keeps its low 32 bits.
+-- pc stays at the ecalli (GP ~77).
 def execEcalli (s : State) (x : Val) : Exit × State := (.host (x.setWidth 32), s)
 
 /-! ## One offset -/

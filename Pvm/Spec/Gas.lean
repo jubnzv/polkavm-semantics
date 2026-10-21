@@ -7,8 +7,7 @@ import Pvm.Common.Isa
 namespace Pvm.Spec
 open Pvm
 
--- SPEC-AMBIGUITY(pvm.tex ~1175): 𝔟 tests the opcode octet ζ_j, which is 0 (`trap`) past the end
--- of `c`. Read through the ISA, no instruction at `j` counts as `trap`.
+-- GP ~1172 tests the octet ζ_j; here `j` is decoded, and no instruction there counts as `trap`.
 def trapOrUnlikelyAt (d : Isa) (p : Program) (j : Nat) : Bool :=
   j ≥ 2 ^ 32 ||
     match d.decode p (BitVec.ofNat 32 j) with
@@ -63,7 +62,7 @@ def costCycles (d : Isa) (p : Program) (pc : Addr) : Instr → Nat
   | .jumpInd .. | .loadImmJumpInd .. => 22
   | .ecalli .. => 100
 
--- SPEC-AMBIGUITY: no instruction at `pc` panics like `trap`, so it is costed as one and ends the walk.
+-- No instruction at `pc`: unreachable under v_blob (GP ~57); costed as `trap`, ending the walk.
 def blockCost (d : Isa) (p : Program) (pc : Addr) : Nat → Nat
   | 0 => 0
   | fuel + 1 =>

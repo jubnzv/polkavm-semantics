@@ -1,10 +1,9 @@
 /-
 Core PVM state types.
 
-Registers and RAM are modelled as total functions: this keeps the spec clean and free of
-external dependencies, and reads are computable. `State` is deliberately not `DecidableEq`
-(conformance assertions compare specific registers / bytes, and equivalence proofs compare
-memory extensionally).
+Registers and RAM are modelled as total functions: this keeps the spec free of external
+dependencies, and reads are computable. `State` is deliberately not `DecidableEq`; compare
+specific registers and bytes instead.
 
 Reference: (Graypaper App. A, "Basic Definition")
 -/
