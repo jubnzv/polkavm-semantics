@@ -1,28 +1,34 @@
 # PolkaVM semantics
-This repository contains an executable small-step semantics based on the [Graypaper](https://github.com/gavofyork/graypaper/).
+This repository contains an executable small-step semantics based on the [Graypaper](https://github.com/gavofyork/graypaper/) 0.8.0 (commit `e537514`).
+
+Supported ISA:
+* [ReviveV1](./Pvm/Isa/Revive.lean)
+* [Latest64](./Pvm/Isa/L64.lean)
 
 > **Note**: It was created using an LLM from the [specification](https://github.com/gavofyork/graypaper/) to match the hand-written [common interfaces](./Pvm/Common). Not for production use.
 
 ## Scope
-A PVM model derived from the Graypaper; some things are deliberately simplified/omitted:
+Deliberately simplified or omitted:
 
-* **Gas** — `gasCost` is a naive per-instruction cycle-sum, not the full out-of-order model `𝔛` (no pipeline simulation, no `max(cycles − 3, 1)` block adjustment).
-* **Program decoding & validation** — the model consumes an already-split `⟨code, bitmask, jumpTable⟩` and validates only the instruction at the current `pc`; the `deblob` blob-parse and the whole-program `v_blob` check (linear-stream validity, `|k| = |c|`, terminating final instruction) are skipped, so a blob the Graypaper rejects wholesale may still run.
-* **Program init** — only the RAM/register output layout (`Y`) is modelled; the JAM-blob prefix decoding (`E₃/E₂/E₄`) and the `Ψ_M` invocation envelope (gas reconciliation, halt output-blob extraction) are out of scope.
-* **Host calls** — the `Ψ_H` host-call loop is modelled, but the JAM host context `X` is not — PVM-core only.
-* **Memory** — per-page permissions are the coarse `{inaccessible, r, w}` (the Graypaper's separate *readable*/*writable* sets are merged); RAM is a static total map, so there is no on-demand dynamic paging.
-* **Exit state** — on `halt`/`panic` the Graypaper zeroes the returned instruction counter; the model leaves `pc` at the offending instruction.
-* **Execution is fuel-bounded** — a `cont` result means fuel was exhausted, not a property of the machine.
+* **Gas** -- a naive per-instruction cycle sum, not the full model `𝔛`.
+* **Program validation** -- only the instruction at `pc` is checked; `deblob` and `v_blob` are skipped.
+* **Program init** -- only the RAM/register layout of `Y`.
+* **Host calls** -- `Ψ_H` without the JAM host context `X`.
+* **Memory** -- a static total map, no dynamic paging.
+* **Exit state** -- on `halt`/`panic`, `pc` stays at the exiting instruction instead of `0`.
+* **Execution** -- fuel-bounded; `cont` means fuel ran out.
+* **`memset`, `sbrk`** -- not modelled.
 
-Where the Graypaper is ambiguous the model makes an explicit judgment call (grep `SPEC-AMBIGUITY` in `Pvm/Spec`):
-* `𝔏` (basic-block start) defaults to `0` for malformed programs
-* the host id `immed_X` is truncated to its low 32 bits
-* the memory access tag collapses the two permission sets as noted above
+## Departures from the Graypaper
+* The `ecalli` host id is truncated to 32 bits.
+* The branch cost `𝔟` counts a target with no valid instruction as `trap`.
+* An index below `2^16` always panics, as the prose says (see [graypaper#446](https://github.com/gavofyork/graypaper/issues/446)).
+* `𝔏` returns `0` when no block start is at or below `pc`.
 
 ## Use-cases
 To check the correctness of the implementation(s). For example:
 * **Equivalence checking** with an independent model based on the actual implementation
-* **Conformance testing** – run the model against the official PVM test-vectors
+* **Conformance testing** -- run the model against the official PVM test-vectors
 * **Differential testing**
 
 It was used to find implementation/specification mismatches in the real PolkaVM implementation:
