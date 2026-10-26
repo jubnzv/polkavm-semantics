@@ -1,0 +1,15 @@
+name: CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          ! grep -rnE 'native_decide|(partial|unsafe) def|implemented_by|@\[extern' Pvm
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: --wfail

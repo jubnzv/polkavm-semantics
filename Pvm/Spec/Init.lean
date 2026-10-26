@@ -80,8 +80,8 @@ def stdInit (sec : Sections) (initPc : Addr) (gas : Int) : State :=
     regs := stdInitRegs sec.args.size, mem := stdInitMem sec }
 
 -- GP eq:registers (~844).
-example : raInit = 0xFFFF0000 := by native_decide
-example : spInit = 0xFEFE0000 := by native_decide
-example : a0Init = 0xFEFF0000 := by native_decide
+example : raInit = 0xFFFF0000 := by decide
+example : spInit = 0xFEFE0000 := by decide
+example : a0Init = 0xFEFF0000 := by decide
 
 end Pvm.Spec
