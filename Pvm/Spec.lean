@@ -1,5 +1,5 @@
-/- Spec model — aggregate import. The named model is `Pvm.Spec.model` (see Model.lean). -/
-import Pvm.Spec.Decode
+/- Spec model — aggregate import. `Pvm.Spec.model` builds the model of an ISA. -/
+import Pvm.Spec.Operands
 import Pvm.Spec.ExecAlu
 import Pvm.Spec.ExecMem
 import Pvm.Spec.ExecControl

@@ -1,35 +1,25 @@
 /-
-Spec model — memory load/store instructions, including the memory-access exception ε^μ.
-Transcribed from `graypaper/text/pvm.tex` §"Instruction Tables":
-  two-imm stores (30–33), one-reg-one-imm loads/stores (52–62),
-  one-reg-two-imm stores (70–73), two-reg-one-imm loads/stores (120–130);
-  ε^μ (~171–180); the `<2^16 ⇒ panic` rule (~168).
-
-Functions return `Exit × State`; on fault/panic the PRIOR state is returned (never mutate).
-On `cont` the pc is left unchanged here — the Model advances it (GP eq. ~201).
+Spec model — loads/stores and ε^μ (~171–180), with the `< 2^16 ⇒ panic` rule (~168).
+On fault/panic the PRIOR state is returned. On `cont` the Model advances the pc.
 -/
 import Pvm.Common.Ast
-import Pvm.Spec.Decode
+import Pvm.Spec.Operands
 
 namespace Pvm.Spec
 open Pvm
 
 /-! ## ε^μ — memory-access exception (GP ~168, ~171–180) -/
 
--- SPEC-AMBIGUITY(pvm.tex eq. ~178): the shared `Access` tag collapses the GP's two
--- independent permission sets readable(μ) and writable(μ) into one of {inaccessible,r,w}.
--- Read `r` = read-only, `w` = read-write (matches standard-init: W sections are heap/stack);
--- hence readable = {r,w}, writable = {w}.
+-- GP access per page is W, R or ∅: readable(μ) = {R, W}, writable(μ) = {W} (overview.tex ~178).
 def isReadable : Access → Bool | .r => true | .w => true | .inaccessible => false
 def isWritable : Access → Bool | .w => true | _ => false
 
--- GP ~168 / pvm.tex line 3: the first 64KB (< 2^16) is ALWAYS inaccessible, regardless of the
--- page tag; any access there contributes to 𝐱 (and, being lowest, forces a panic).
+-- GP ~168 (and the TODO #446 atop pvm.tex): an index below 2^16 is ALWAYS inaccessible,
+-- regardless of the page tag, so it lands in 𝐱 and, being lowest, forces a panic.
 -- GP ~178: μ is CYCLIC (μ^↺), so the constituent indices 𝐫/𝐰 are RAW (unwrapped) naturals
 -- {A, A+1, …} (A+i may reach 2^32). Accessibility is looked up at the cyclic address (x mod 2^32),
 -- but the index kept in 𝐱 is the RAW x — `min(𝐱)` is over raw indices, reduced mod 2^32 only at the
--- panic/fault test (GP eq. ~175–178). Pre-wrapping each byte before the min was a bug: it reports a
--- high-address fault as a spurious low-address panic when an access wraps past 2^32.
+-- panic/fault test (GP eq. ~175–178).
 def addrBadRead (m : Mem) (x : Nat) : Bool :=
   x % 2 ^ 32 < zoneSize || !(isReadable (m.accessAt (BitVec.ofNat 32 x)))
 def addrBadWrite (m : Mem) (x : Nat) : Bool :=
@@ -78,14 +68,14 @@ def doStore (s : State) (addr : Addr) (n : Nat) (v : Nat) : Exit × State :=
   | .cont => (.cont, { s with mem := writeBytesLE s.mem addr n v })
   | e => (e, s)
 
-/-! ## Two immediates — stores (30–33): addr = ν_X, value = ν_Y -/
+/-! ## Two immediates — stores: addr = ν_X, value = ν_Y -/
 
 def execStoreImmU8  (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 1 val.toNat
 def execStoreImmU16 (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 2 val.toNat
 def execStoreImmU32 (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 4 val.toNat
 def execStoreImmU64 (s : State) (addr val : Val) : Exit × State := doStore s (addr.setWidth 32) 8 val.toNat
 
-/-! ## One register & one immediate — loads/stores (52–62): addr = immed_X -/
+/-! ## One register & one immediate — loads/stores: addr = immed_X -/
 
 def execLoadU8  (s : State) (a : Reg) (x : Val) : Exit × State := doLoad s a (x.setWidth 32) 1 false
 def execLoadI8  (s : State) (a : Reg) (x : Val) : Exit × State := doLoad s a (x.setWidth 32) 1 true
@@ -99,7 +89,7 @@ def execStoreU16 (s : State) (a : Reg) (x : Val) : Exit × State := doStore s (x
 def execStoreU32 (s : State) (a : Reg) (x : Val) : Exit × State := doStore s (x.setWidth 32) 4 (s.reg a).toNat
 def execStoreU64 (s : State) (a : Reg) (x : Val) : Exit × State := doStore s (x.setWidth 32) 8 (s.reg a).toNat
 
-/-! ## One register & two immediates — stores (70–73): addr = reg_A + ν_X, value = ν_Y -/
+/-! ## One register & two immediates — stores: addr = reg_A + ν_X, value = ν_Y -/
 
 def execStoreImmIndU8  (s : State) (a : Reg) (x val : Val) : Exit × State :=
   doStore s ((s.reg a + x).setWidth 32) 1 val.toNat
@@ -110,7 +100,7 @@ def execStoreImmIndU32 (s : State) (a : Reg) (x val : Val) : Exit × State :=
 def execStoreImmIndU64 (s : State) (a : Reg) (x val : Val) : Exit × State :=
   doStore s ((s.reg a + x).setWidth 32) 8 val.toNat
 
-/-! ## Two registers & one immediate — loads/stores (120–130): addr = reg_B + ν_X -/
+/-! ## Two registers & one immediate — loads/stores: addr = reg_B + ν_X -/
 
 -- stores: value source = reg_A
 def execStoreIndU8  (s : State) (a b : Reg) (x : Val) : Exit × State :=

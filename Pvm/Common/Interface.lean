@@ -1,15 +1,10 @@
 /-
-The shared interface both models implement, plus the Ψ₁ (single-step) / Ψ (run) skeleton.
+The model interface and the Ψ₁ / Ψ / Ψ_H skeleton (gas charging, charged-flag bookkeeping).
+Models supply the ISA, `gasCost` and `exec`.
 
-Per the "interfaces only" rule: the *types* and the step/run *skeleton* (including real
-per-basic-block gas charging and the charged-flag bookkeeping, GP Ψ₁) live here and are shared.
-The *bodies* — `decode`, `basicBlockStart`, `gasCost`, `exec` — are supplied per model, so the
-decoder and the semantics each stay independently equivalence-checkable.
-
-`gasCost` is a simplified hook (cost-table sums), NOT the full out-of-order pipeline
-simulation from GP §"Gas Cost Model".
+`gasCost` is a cost-table sum, NOT the GP §"Gas Cost Model" pipeline simulation.
 -/
-import Pvm.Common.Ast
+import Pvm.Common.Isa
 
 namespace Pvm
 
@@ -19,17 +14,14 @@ def Exit.keepsGoing : Exit → Bool
   | .cont | .host _ => true
   | _ => false
 
-/-- The per-model interface. Bodies differ between the spec model and the impl model. -/
+/-- The per-model interface. -/
 class PvmModel where
-  /-- Decode the instruction whose opcode octet is at offset `pc`. `none` ⇒ invalid instruction. -/
-  decode          : Program → Addr → Option Instr
-  /-- Start of the basic block containing `pc` (GP `𝔏`). -/
-  basicBlockStart : Program → Addr → Addr
+  isa     : Isa
   /-- Gas cost of the basic block starting at `pc` (GP `ζ^Δ`). Simplified; not the full OoO sim. -/
-  gasCost         : Program → Addr → Nat
+  gasCost : Program → Addr → Nat
   /-- Execute one decoded instruction: produce the exit reason and posterior state.
       Responsible for control-flow validity, memory faults, and the pc update. -/
-  exec            : Program → Instr → State → Exit × State
+  exec    : Program → Instr → State → Exit × State
 
 namespace PvmModel
 
@@ -42,7 +34,7 @@ def chargeBlock (p : Program) (s : State) : Exit × State :=
   if s.charged then
     (.cont, s)
   else
-    let cost : Int := Int.ofNat (M.gasCost p (M.basicBlockStart p s.pc))
+    let cost : Int := Int.ofNat (M.gasCost p (M.isa.basicBlockStart p s.pc))
     if s.gas ≥ cost then
       (.cont, { s with gas := s.gas - cost, charged := true })
     else
@@ -50,12 +42,12 @@ def chargeBlock (p : Program) (s : State) : Exit × State :=
 
 /-- Single-step state transition Ψ₁. -/
 def step (p : Program) (s : State) : Exit × State :=
-  match chargeBlock p s with
-  | (.oog, s') => (.oog, s')
-  | (_,   s₁) =>
-    match M.decode p s₁.pc with
-    | none       => (.panic, s₁)        -- invalid instruction
-    | some instr =>
+  match M.isa.decode p s.pc with
+  | none       => (.panic, s)        -- GP Ψ (~36): deblob(p, ı) fails before Ψ₁, ξ unchanged
+  | some instr =>
+    match chargeBlock p s with
+    | (.oog, s') => (.oog, s')
+    | (_,   s₁) =>
       let (e, s₂) := M.exec p instr s₁
       -- charged-flag reset: drop it iff a block terminator continued / made a host call,
       -- so the next basic block is charged afresh (GP eq. for `𝔤*`).
@@ -70,19 +62,17 @@ def run (p : Program) : Nat → State → Exit × State
     | (.cont, s') => run p fuel s'
     | (e,     s') => (e, s')
 
-/-- Ψ_H (GP §752): the host-call state machine wrapping Ψ.  Run the inner machine to an exit; on a
-    host-call `host h`, service it with `f` (`f h s' = (ε'', s'')`); if `ε''` continues, RESUME past
-    the `ecalli` at `resume ı' = ı' + 1 + skip(ı')` (the GP `ı''`); otherwise propagate `ε''`.
-    `callBudget` bounds the host-call count and `runFuel` each inner run (totality).  The JAM context
-    `X` of the GP is omitted — out of PVM-core scope. -/
-def runHost (p : Program) (runFuel : Nat) (resume : Addr → Addr)
+/-- Ψ_H (GP §752). On `host h`, service it with `f`; if that continues, resume at
+    ı'' = `nextPc` ı', else propagate. `callBudget`/`runFuel` bound it for totality. The JAM
+    context `X` is omitted. -/
+def runHost (p : Program) (runFuel : Nat)
     (f : BitVec 32 → State → Exit × State) : Nat → State → Exit × State
   | 0,            s => (.cont, s)
   | callBudget+1, s =>
     match run p runFuel s with
     | (.host h, s') =>
       match f h s' with
-      | (.cont, s'') => runHost p runFuel resume f callBudget { s'' with pc := resume s'.pc }
+      | (.cont, s'') => runHost p runFuel f callBudget { s'' with pc := M.isa.nextPc p s'.pc }
       | (e'',   s'') => (e'', s'')
     | other => other
 

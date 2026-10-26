@@ -5,15 +5,6 @@ Spec model — standard program initialization `Y` (Graypaper §789, `sec:standa
 stack `s`) and lays out RAM + registers.  We model the OUTPUT layout (eq:memlayout ~810,
 eq:registers ~844) as a function of the sections and the argument data `a`; the JAM-blob prefix
 decoding (E₃/E₂/E₄, eq:conditions ~804) is the blob-format concern, not modelled here.
-
-CONSTANT CHECK vs polkavm (`crates/polkavm-common/src/abi.rs`) — the init constants AGREE:
-  * RA (R0) = 2^32 - 2^16 = 0xFFFF0000              = VM_ADDR_RETURN_TO_HOST.
-  * SP (R1) = 2^32 - 2·Z_Z - Z_I = 0xFEFE0000        = VM_ADDRESS_SPACE_TOP - aux - VM_MAX_PAGE_SIZE
-                                                        (= `stack_address_high` when aux = Z_I).
-  * A0 (R7) = 2^32 - Z_Z - Z_I = 0xFEFF0000          = `aux_data_address` (when aux = Z_I).
-  * A1 (R8) = |a|.
-The GP FIXES the input region at Z_I = 2^24; polkavm parameterizes it (`aux_data_size`).  With the
-GP's input size they coincide exactly — a configuration parameter, NOT a PVM-core divergence.
 -/
 import Pvm.Common.Types
 
@@ -88,7 +79,7 @@ def stdInit (sec : Sections) (initPc : Addr) (gas : Int) : State :=
   { pc := initPc, gas := gas, charged := false,
     regs := stdInitRegs sec.args.size, mem := stdInitMem sec }
 
--- Sanity: the init register constants are exactly the GP / polkavm values.
+-- GP eq:registers (~844).
 example : raInit = 0xFFFF0000 := by native_decide
 example : spInit = 0xFEFE0000 := by native_decide
 example : a0Init = 0xFEFF0000 := by native_decide
