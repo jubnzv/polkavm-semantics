@@ -6,3 +6,4 @@ import Pvm.Common.Interface
 import Pvm.Spec
 import Pvm.Isa.Revive
 import Pvm.Isa.L64
+import Pvm.Fuel

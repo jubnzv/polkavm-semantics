@@ -393,4 +393,48 @@ def isa : Isa where
   isBlockStart    := isBlockStart
   basicBlockStart := basicBlockStart
 
+theorem mem_walk {p : Program} {e : Nat} : ∀ {f s x : Nat}, x ∈ walk p e f s → x < e
+  | 0, _, _, h => by simp [walk] at h
+  | f + 1, s, x, h => by
+    unfold walk at h
+    split at h
+    · rcases List.mem_cons.mp h with rfl | h
+      · assumption
+      · exact mem_walk h
+    · simp at h
+
+theorem inS_lt {p : Program} {i : Nat} (h : inS p i = true) : i < blockEnd p i := by
+  unfold inS chain at h
+  have := mem_walk (List.contains_iff_mem.mp h)
+  simp only [blockEnd, B] at this ⊢
+  omega
+
+theorem decode_lt {p : Program} {pc : Addr} {i : Instr} (h : decode p pc = some i) :
+    pc.toNat < p.code.size := by
+  unfold decode at h
+  split at h
+  · rename_i hv
+    have := inS_lt (Bool.and_eq_true _ _ ▸ hv).1
+    simp only [blockEnd] at this
+    omega
+  · simp at h
+
+theorem len_pos (p : Program) (i : Nat) : 1 ≤ len p i := by
+  have : 1 ≤ (opc p i).2 := by unfold opc; split <;> simp
+  show 1 ≤ (opc p i).2 + (op (opc p i).1).1
+  omega
+
+theorem nextPc_gt {p : Program} {pc : Addr} {i : Instr} (h : decode p pc = some i)
+    (hc : p.code.size < 2 ^ 32) : pc.toNat < (isa.nextPc p pc).toNat := by
+  unfold decode at h
+  split at h
+  · rename_i hv
+    have hs := (Bool.and_eq_true _ _ ▸ hv).1
+    have h1 := inS_lt hs
+    have := len_pos p pc.toNat
+    simp only [isa, hs, if_true, BitVec.toNat_add, BitVec.toNat_ofNat, lam]
+    simp only [blockEnd] at h1 ⊢
+    omega
+  · simp at h
+
 end Pvm.L64

@@ -1,8 +1,6 @@
 /-
 The model interface and the Ψ₁ / Ψ / Ψ_H skeleton (gas charging, charged-flag bookkeeping).
 Models supply the ISA, `gasCost` and `exec`.
-
-`gasCost` is a cost-table sum, NOT the GP §"Gas Cost Model" pipeline simulation.
 -/
 import Pvm.Common.Isa
 
@@ -17,7 +15,7 @@ def Exit.keepsGoing : Exit → Bool
 /-- The per-model interface. -/
 class PvmModel where
   isa     : Isa
-  /-- Gas cost of the basic block starting at `pc` (GP `ζ^Δ`). Simplified; not the full OoO sim. -/
+  /-- Gas cost of the basic block starting at `pc` (GP `ϱ^Δ`, ~998). -/
   gasCost : Program → Addr → Nat
   /-- Execute one decoded instruction: produce the exit reason and posterior state.
       Responsible for control-flow validity, memory faults, and the pc update. -/
@@ -73,6 +71,91 @@ def runBlob (deblob : Array UInt8 → Option Program) (b : Array UInt8) (fuel : 
   match deblob b with
   | some p => run p fuel s
   | none   => if fuel == 0 then (.cont, s) else (.panic, s)
+
+/-- What `run_ne_cont` needs of a model and a program. -/
+structure Progress (p : Program) (K : Nat) : Prop where
+  cost  : ∀ pc, 1 ≤ M.gasCost p pc
+  gas   : ∀ i s, (M.exec p i s).2.gas = s.gas
+  below : ∀ pc i, M.isa.decode p pc = some i → pc.toNat < K
+  up    : ∀ i s s', M.isa.decode p s.pc = some i → i.isTerminator = false →
+            M.exec p i s = (.cont, s') → s.pc.toNat < s'.pc.toNat
+
+/-- An upper bound on the `cont` steps left from `s`. -/
+def fuelBound (K : Nat) (s : State) : Nat :=
+  s.gas.toNat * (K + 2) + if s.charged then K + 1 - s.pc.toNat else 0
+
+theorem step_fuelBound {p : Program} {K : Nat} (h : Progress p K) {s s' : State}
+    (hs : step p s = (.cont, s')) : fuelBound K s' < fuelBound K s := by
+  unfold step at hs
+  cases hi : M.isa.decode p s.pc with
+  | none => simp [hi] at hs
+  | some i =>
+    simp only [hi] at hs
+    have hk := h.below _ _ hi
+    cases hc : s.charged
+    · have h1 := h.cost (M.isa.basicBlockStart p s.pc)
+      generalize hcost : M.gasCost p (M.isa.basicBlockStart p s.pc) = c at h1
+      by_cases hge : (c : Int) ≤ s.gas
+      · have hcb : chargeBlock p s = (.cont, { s with gas := s.gas - c, charged := true }) := by
+          simp [chargeBlock, hc, hcost, hge]
+        rw [hcb] at hs
+        dsimp only at hs
+        rcases hx : M.exec p i { s with gas := s.gas - c, charged := true } with ⟨e, s₂⟩
+        have hg := h.gas i { s with gas := s.gas - c, charged := true }
+        rw [hx] at hs hg
+        simp only [Prod.mk.injEq] at hs
+        obtain ⟨-, rfl⟩ := hs
+        have hlt : s₂.gas.toNat + 1 ≤ s.gas.toNat := by simp at hg; omega
+        have hle := Nat.mul_le_mul_right (K + 2) hlt
+        rw [Nat.succ_mul] at hle
+        simp only [fuelBound, hc]
+        split <;> omega
+      · have hcb : chargeBlock p s = (.oog, s) := by
+          simp [chargeBlock, hc, hcost, Int.not_le.mp hge]
+        rw [hcb] at hs
+        simp at hs
+    · have hcb : chargeBlock p s = (.cont, s) := by simp [chargeBlock, hc]
+      rw [hcb] at hs
+      dsimp only at hs
+      rcases hx : M.exec p i s with ⟨e, s₂⟩
+      have hg := h.gas i s
+      rw [hx] at hs hg
+      dsimp only at hg
+      simp only [Prod.mk.injEq] at hs
+      obtain ⟨rfl, rfl⟩ := hs
+      cases ht : i.isTerminator
+      · have hu := h.up i s s₂ hi ht hx
+        simp only [fuelBound, hc, hg, Bool.false_and, Bool.not_false, if_true]
+        omega
+      · simp only [fuelBound, hc, hg, Exit.keepsGoing, Bool.and_self, Bool.not_true, if_true,
+          Bool.false_eq_true, if_false]
+        omega
+
+theorem loop_le_fuelBound {p : Program} {K : Nat} (h : Progress p K) :
+    ∀ fuel s, (loop p fuel s).1 = .cont → fuel ≤ fuelBound K s
+  | 0, _, _ => Nat.zero_le _
+  | fuel + 1, s, hc => by
+    unfold loop at hc
+    rcases hst : step p s with ⟨e, s'⟩
+    rw [hst] at hc
+    cases e with
+    | cont =>
+      have := loop_le_fuelBound h fuel s' hc
+      have := step_fuelBound h hst
+      omega
+    | _ => simp at hc
+
+/-- Ψ exits once its fuel exceeds `ξ·(K + 2) + K + 1`. -/
+theorem run_ne_cont {p : Program} {K fuel : Nat} {s : State} (h : Progress p K)
+    (hf : s.gas.toNat * (K + 2) + K + 1 < fuel) : (run p fuel s).1 ≠ .cont := by
+  have hb : fuelBound K s ≤ s.gas.toNat * (K + 2) + K + 1 := by
+    unfold fuelBound; split <;> omega
+  unfold run
+  split
+  · intro hc
+    have := loop_le_fuelBound h fuel s hc
+    omega
+  · simp
 
 /-- Ψ_H (GP §752). On `host h`, service it with `f`; if that continues, resume at
     ı'' = `nextPc` ı', else propagate. `callBudget`/`runFuel` bound it for totality. The JAM

@@ -172,4 +172,52 @@ def exec (d : Isa) (p : Program) (instr : Instr) (s : State) : Exit × State :=
   exec    := exec d
 }
 
+theorem sjump_gas (d : Isa) (p : Program) (s : State) (b : Nat) : (sjump d p s b).2.gas = s.gas := by
+  unfold sjump; split <;> rfl
+
+theorem branch_gas (d : Isa) (p : Program) (s : State) (b : Nat) (c : Bool) :
+    (branch d p s b c).2.gas = s.gas := by
+  unfold branch; dsimp only; repeat' split
+  all_goals rfl
+
+theorem djump_gas (d : Isa) (p : Program) (s : State) (a : Nat) : (djump d p s a).2.gas = s.gas := by
+  unfold djump; repeat' split
+  all_goals first | rfl | exact sjump_gas ..
+
+theorem doLoad_gas (s : State) (a : Reg) (addr : Addr) (n : Nat) (sg : Bool) :
+    (doLoad s a addr n sg).2.gas = s.gas := by
+  unfold doLoad; split <;> rfl
+
+theorem doStore_gas (s : State) (addr : Addr) (n v : Nat) : (doStore s addr n v).2.gas = s.gas := by
+  unfold doStore; split <;> rfl
+
+theorem memNext_gas {d : Isa} {p : Program} {s : State} {r : Exit × State} (h : r.2.gas = s.gas) :
+    (memNext d p s r).2.gas = s.gas := by
+  unfold memNext; split <;> simp_all
+
+theorem memNext_pc {d : Isa} {p : Program} {s s' : State} {r : Exit × State}
+    (h : memNext d p s r = (.cont, s')) : s'.pc = d.nextPc p s.pc := by
+  unfold memNext at h; split at h <;> simp_all; rw [← h]
+
+theorem exec_gas (d : Isa) (p : Program) (i : Instr) (s : State) : (exec d p i s).2.gas = s.gas := by
+  cases i <;> first
+    | rfl
+    | exact sjump_gas .. | exact branch_gas .. | exact djump_gas ..
+    | exact memNext_gas (doLoad_gas ..) | exact memNext_gas (doStore_gas ..)
+
+/-- A non-terminator that continues goes to `nextPc` (GP ~201). -/
+theorem exec_next (d : Isa) (p : Program) (i : Instr) (s s' : State)
+    (h : i.isTerminator = false) (he : exec d p i s = (.cont, s')) : s'.pc = d.nextPc p s.pc := by
+  cases i <;> simp only [Instr.isTerminator, Bool.true_eq_false] at h <;> first
+    | exact memNext_pc he
+    | (simp only [exec, contNext, execUnlikely, Prod.mk.injEq] at he; rw [← he.2])
+    | simp [exec, execEcalli] at he
+
+theorem progress (d : Isa) (p : Program) (K : Nat)
+    (hb : ∀ pc i, d.decode p pc = some i → pc.toNat < K)
+    (hu : ∀ pc i, d.decode p pc = some i → pc.toNat < (d.nextPc p pc).toNat) :
+    PvmModel.Progress (M := model d) p K :=
+  @PvmModel.Progress.mk (model d) p K (gasCost_pos d p) (exec_gas d p) hb
+    fun i s s' hi ht he => by rw [exec_next d p i s s' ht he]; exact hu _ _ hi
+
 end Pvm.Spec

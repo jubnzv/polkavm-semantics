@@ -229,4 +229,31 @@ def isa : Isa where
   isBlockStart    := isBlockStart
   basicBlockStart := basicBlockStart
 
+theorem skip_le (p : Program) (i : Nat) : skip p i ≤ 24 := by
+  unfold skip
+  cases h : (List.range 24).find? _ with
+  | none => simp
+  | some j => simpa using Nat.le_of_lt (List.mem_range.mp (List.mem_of_find?_eq_some h))
+
+theorem decode_lt {p : Program} {pc : Addr} {i : Instr} (h : decode p pc = some i) :
+    pc.toNat < p.code.size := by
+  unfold decode at h
+  split at h
+  · rename_i hv
+    simp only [vInst, inU, kSet, Bool.and_eq_true, beq_iff_eq] at hv
+    obtain ⟨hs, hk, -⟩ := hv
+    rcases Nat.lt_or_ge pc.toNat p.bitmask.size with hl | hl
+    · omega
+    · rw [Array.getElem?_eq_none hl] at hk
+      simp at hk
+  · simp at h
+
+theorem nextPc_gt {p : Program} {pc : Addr} {i : Instr} (h : decode p pc = some i)
+    (hc : p.code.size + 25 ≤ 2 ^ 32) : pc.toNat < (isa.nextPc p pc).toNat := by
+  have := decode_lt h
+  have := skip_le p pc.toNat
+  have : (1 : BitVec 32).toNat = 1 := rfl
+  simp only [isa, BitVec.toNat_add, BitVec.toNat_ofNat]
+  omega
+
 end Pvm.Revive
