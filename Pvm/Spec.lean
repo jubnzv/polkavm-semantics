@@ -1,4 +1,5 @@
 /- Spec model — aggregate import. `Pvm.Spec.model` builds the model of an ISA. -/
+import Pvm.Spec.Serialization
 import Pvm.Spec.Operands
 import Pvm.Spec.ExecAlu
 import Pvm.Spec.ExecMem

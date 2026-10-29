@@ -11,7 +11,7 @@ Supported ISA:
 Deliberately simplified or omitted:
 
 * **Gas** -- a naive per-instruction cycle sum, not the full model `𝔛`.
-* **Program validation** -- only the instruction at `pc` is checked; `deblob` and `v_blob` are skipped.
+* **Program validation** -- none for Latest64: GP 0.8.0 defines no container or `v_blob` for it.
 * **Program init** -- only the RAM/register layout of `Y`.
 * **Host calls** -- `Ψ_H` without the JAM host context `X`.
 * **Memory** -- a static total map, no dynamic paging.

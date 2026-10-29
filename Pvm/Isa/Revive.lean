@@ -1,8 +1,10 @@
 /-
-ReviveV1: the GP encoding (~79–142) and operand groups (~274), with its own opcode numbers.
+ReviveV1: the GP blob (~49), encoding (~79–142) and operand groups (~274), with its own opcode
+numbers.
 -/
 import Pvm.Common.Isa
 import Pvm.Spec.Operands
+import Pvm.Spec.Serialization
 
 namespace Pvm.Revive
 open Pvm Pvm.Spec
@@ -166,15 +168,29 @@ def op : Nat → Op
 def ins (p : Program) (n : Nat) : Option Instr :=
   p.code[n]? >>= fun c => (op c.toNat).map (· p (site p n))
 
+/-- c_n ∈ T (GP ~108). -/
+def isT (p : Program) (n : Nat) : Bool := (ins p n).any Instr.isTerminator
+
 /-- k_n = 1 ∧ c_n ∈ U (GP ~136). -/
 def inU (p : Program) (n : Nat) : Bool := kSet p n && (ins p n).isSome
 
 /-- k_n = 1 ∧ c_n ∈ T (GP ~136). -/
-def inT (p : Program) (n : Nat) : Bool := kSet p n && (ins p n).any Instr.isTerminator
+def inT (p : Program) (n : Nat) : Bool := kSet p n && isT p n
 
 /-- v_inst (GP ~66). -/
+def vInst (p : Program) (i : Nat) : Bool := p.bitmask.size == p.code.size && inU p i
+
 def decode (p : Program) (pc : Addr) : Option Instr :=
-  if p.bitmask.size == p.code.size && kSet p pc.toNat then ins p pc.toNat else none
+  if vInst p pc.toNat then ins p pc.toNat else none
+
+/-- v_blob (GP ~57); ı grows and stays ≤ |k|, so |k| + 1 steps decide it. -/
+def vBlob (p : Program) : Nat → Nat → Bool
+  | 0,        _ => false
+  | fuel + 1, i =>
+    let n := i + 1 + skip p i
+    if i > 0 && i == p.bitmask.size then true
+    else if n == p.bitmask.size && !isT p i then false
+    else vInst p i && vBlob p fuel n
 
 /-- ϖ (GP ~136); skip ≤ 24 puts n in [j - 25, j). -/
 def isBlockStart (p : Program) (j : Nat) : Bool :=
@@ -187,7 +203,26 @@ def basicBlockStart (p : Program) (pc : Addr) : Addr :=
   BitVec.ofNat 32
     (((List.range (min (pc.toNat + 1) p.code.size)).reverse.find? (isBlockStart p)).getD 0)
 
+/-- deblob's `(c, k, j)` (GP ~52): the blob is exactly
+    `E(|j|) ⌢ E₁(z) ⌢ E(|c|) ⌢ E_z(j) ⌢ E(c) ⌢ E(k)`, each `j_i` a `pvmreg`. `E(k)` leaves
+    `|k|` open up to padding; v_inst's `|k| = |c|` settles it. v_blob is `isa.valid`, v_inst at
+    ı `isa.decode`. -/
+def deblob (b : Array UInt8) : Option Program := do
+  let (nj, i) ← natAt b 0
+  let (z, i) ← fixedAt b i 1
+  let (nc, i) ← natAt b i
+  let (o, i) ← octetsAt b i (nj * z)
+  let js := (List.range (if z = 0 then 0 else nj)).map fun e =>
+    ofLE (o.extract (e * z) (e * z + z))
+  guard (js.all (· < 2 ^ 64))
+  let (c, i) ← octetsAt b i nc
+  let (k, i) ← bitsAt b i nc
+  guard (i == b.size)
+  pure { code := c, bitmask := k,
+         jumpTable := { len := nj, entries := (js.map (BitVec.ofNat 64)).toArray } }
+
 def isa : Isa where
+  valid p         := vBlob p (p.bitmask.size + 1) 0
   decode          := decode
   -- GP ~201
   nextPc p pc     := pc + 1 + BitVec.ofNat 32 (skip p pc.toNat)

@@ -43,7 +43,7 @@ def chargeBlock (p : Program) (s : State) : Exit × State :=
 /-- Single-step state transition Ψ₁. -/
 def step (p : Program) (s : State) : Exit × State :=
   match M.isa.decode p s.pc with
-  | none       => (.panic, s)        -- GP Ψ (~36): deblob(p, ı) fails before Ψ₁, ξ unchanged
+  | none       => (.panic, s)        -- GP Ψ (~45): v_inst(c, k, ı) fails before Ψ₁, ξ unchanged
   | some instr =>
     match chargeBlock p s with
     | (.oog, s') => (.oog, s')
@@ -54,13 +54,25 @@ def step (p : Program) (s : State) : Exit × State :=
       let reset := instr.isTerminator && e.keepsGoing
       (e, { s₂ with charged := !reset })
 
-/-- Multi-step driver Ψ (fuel-bounded for totality). A `cont` result means fuel was exhausted. -/
-def run (p : Program) : Nat → State → Exit × State
+/-- Ψ₁ until an exit or until fuel runs out. -/
+def loop (p : Program) : Nat → State → Exit × State
   | 0,      s => (.cont, s)
   | fuel+1, s =>
     match step p s with
-    | (.cont, s') => run p fuel s'
+    | (.cont, s') => loop p fuel s'
     | (e,     s') => (e, s')
+
+/-- Multi-step driver Ψ (fuel-bounded for totality). A `cont` result means fuel was exhausted.
+    deblob's v_blob(c, k, 0) (GP ~49) does not depend on ı, so it is tested once, on entry. -/
+def run (p : Program) (fuel : Nat) (s : State) : Exit × State :=
+  if fuel == 0 || M.isa.valid p then loop p fuel s else (.panic, s)
+
+/-- Ψ on a program blob (GP ~45): a blob `deblob` rejects panics on the first step. -/
+def runBlob (deblob : Array UInt8 → Option Program) (b : Array UInt8) (fuel : Nat)
+    (s : State) : Exit × State :=
+  match deblob b with
+  | some p => run p fuel s
+  | none   => if fuel == 0 then (.cont, s) else (.panic, s)
 
 /-- Ψ_H (GP §752). On `host h`, service it with `f`; if that continues, resume at
     ı'' = `nextPc` ı', else propagate. `callBudget`/`runFuel` bound it for totality. The JAM

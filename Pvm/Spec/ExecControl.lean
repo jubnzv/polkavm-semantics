@@ -23,10 +23,10 @@ def branch (d : Isa) (p : Program) (s : State) (b : Nat) (c : Bool) : Exit × St
 
 def djump (d : Isa) (p : Program) (s : State) (a : Nat) : Exit × State :=
   if a == haltAddr.toNat then (.halt, s)
-  else if a == 0 || a > p.jumpTable.size * dynAlign || a % dynAlign != 0 then (.panic, s)
+  else if a == 0 || a > p.jumpTable.len * dynAlign || a % dynAlign != 0 then (.panic, s)
   else
-    match p.jumpTable[a / dynAlign - 1]? with
-    | some tgt => if d.isBlockStart p tgt.toNat then (.cont, { s with pc := tgt }) else (.panic, s)
+    match p.jumpTable.get? (a / dynAlign - 1) with
+    | some tgt => sjump d p s tgt.toNat
     | none     => (.panic, s)
 
 /-! ## No arguments -/

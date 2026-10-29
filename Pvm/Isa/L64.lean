@@ -16,6 +16,7 @@ Block starts: ϖ = ({ b < n : b ≡ 0 (mod B) } ∪ { s + L(s) : s ∈ V ∧ r(s
 decode(ı) = none for ı ∉ V; otherwise the mnemonic of r(ı), read with its GP operand group from
   ı + o(ı) with ℓ = A(r(ı)).
 nextPc(ı) = ı + λ(ı) for ı ∈ S, and ı + 1 otherwise.
+Every program is valid: GP 0.8.0 has no v_blob for this encoding.
 -/
 import Pvm.Common.Isa
 import Pvm.Spec.Operands
@@ -386,6 +387,7 @@ def basicBlockStart (p : Program) (pc : Addr) : Addr :=
     ((chain p (k * B)).filter (· ≤ i)).reverse.find? (isBlockStart p)).getD 0)
 
 def isa : Isa where
+  valid _         := true
   decode          := decode
   nextPc p pc     := pc + BitVec.ofNat 32 (if inS p pc.toNat then lam p pc.toNat else 1)
   isBlockStart    := isBlockStart

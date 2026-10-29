@@ -1,12 +1,13 @@
 /-
-The ISA: the encoding facts the machine depends on. Semantics, Ψ₁ and gas reach the encoding
-only through these four functions.
+The ISA. Semantics, Ψ and gas see the encoding only through these five functions.
 -/
 import Pvm.Common.Ast
 
 namespace Pvm
 
 structure Isa where
+  /-- v_blob(c, k, 0) (GP ~57); `false` ⇒ Ψ panics on its first step. -/
+  valid           : Program → Bool
   /-- The instruction at `ı`; `none` ⇒ Ψ₁ panics. -/
   decode          : Program → Addr → Option Instr
   /-- The default successor ı' (GP ~201). -/

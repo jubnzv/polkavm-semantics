@@ -61,12 +61,25 @@ structure State where
 @[inline] def State.setReg (s : State) (r : Reg) (v : Val) : State :=
   { s with regs := fun r' => if r' = r then v else s.regs r' }
 
+/-- The dynamic jump table `j` (GP ~52): `len` entries, `entries` then zeros. With `z = 0` every
+    entry is `E₀ = []`, so the blob does not bound `len`. -/
+structure JumpTable where
+  len     : Nat
+  entries : Array Val
+  deriving Inhabited, Repr
+
+def JumpTable.ofArray (a : Array Val) : JumpTable := { len := a.size, entries := a }
+
+/-- `j_i`. -/
+def JumpTable.get? (t : JumpTable) (i : Nat) : Option Val :=
+  if i < t.len then some (t.entries[i]?.getD 0) else none
+
 /-- A decoded PVM program blob: instruction data `c`, opcode bitmask `k`, jump table `j`.
     `bitmask` is empty for an ISA that does not use one. -/
 structure Program where
   code      : Array UInt8
   bitmask   : Array Bool
-  jumpTable : Array Addr
+  jumpTable : JumpTable
   deriving Inhabited, Repr
 
 end Pvm
