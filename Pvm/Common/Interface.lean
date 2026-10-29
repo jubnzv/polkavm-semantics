@@ -12,6 +12,14 @@ def Exit.keepsGoing : Exit → Bool
   | .cont | .host _ => true
   | _ => false
 
+/-- A host call's exit (GP ~782). -/
+inductive HostExit | cont | panic | oog
+  deriving DecidableEq, Repr, Inhabited
+
+/-- 𝕏 (GP ~782): `f(h, ϱ, ω, μ, x) = (ε, ϱ', ω', μ', x')`. -/
+abbrev HostFn (X : Type) :=
+  Val → Int → (Reg → Val) → Mem → X → HostExit × Int × (Reg → Val) × Mem × X
+
 /-- The per-model interface. -/
 class PvmModel where
   isa     : Isa
@@ -52,25 +60,26 @@ def step (p : Program) (s : State) : Exit × State :=
       let reset := instr.isTerminator && e.keepsGoing
       (e, { s₂ with charged := !reset })
 
-/-- Ψ₁ until an exit or until fuel runs out. -/
+/-- Ψ (GP ~37) with fuel: `halt` and `panic` give ı = 0, other exits the prior ı, ω and μ. -/
 def loop (p : Program) : Nat → State → Exit × State
   | 0,      s => (.cont, s)
   | fuel+1, s =>
     match step p s with
-    | (.cont, s') => loop p fuel s'
-    | (e,     s') => (e, s')
+    | (.cont,  s') => loop p fuel s'
+    | (.halt,  s') => (.halt, { s' with pc := 0 })
+    | (.panic, s') => (.panic, { s' with pc := 0 })
+    | (e,      s') => (e, { s' with pc := s.pc, regs := s.regs, mem := s.mem })
 
-/-- Multi-step driver Ψ (fuel-bounded for totality). A `cont` result means fuel was exhausted.
-    deblob's v_blob(c, k, 0) (GP ~49) does not depend on ı, so it is tested once, on entry. -/
+/-- Ψ; `cont` means the fuel ran out. v_blob (GP ~49) does not depend on ı, so it is tested once. -/
 def run (p : Program) (fuel : Nat) (s : State) : Exit × State :=
-  if fuel == 0 || M.isa.valid p then loop p fuel s else (.panic, s)
+  if fuel == 0 || M.isa.valid p then loop p fuel s else (.panic, { s with pc := 0 })
 
 /-- Ψ on a program blob (GP ~45): a blob `deblob` rejects panics on the first step. -/
 def runBlob (deblob : Array UInt8 → Option Program) (b : Array UInt8) (fuel : Nat)
     (s : State) : Exit × State :=
   match deblob b with
   | some p => run p fuel s
-  | none   => if fuel == 0 then (.cont, s) else (.panic, s)
+  | none   => if fuel == 0 then (.cont, s) else (.panic, { s with pc := 0 })
 
 /-- What `run_ne_cont` needs of a model and a program. -/
 structure Progress (p : Program) (K : Nat) : Prop where
@@ -157,19 +166,49 @@ theorem run_ne_cont {p : Program} {K fuel : Nat} {s : State} (h : Progress p K)
     omega
   · simp
 
-/-- Ψ_H (GP §752). On `host h`, service it with `f`; if that continues, resume at
-    ı'' = `nextPc` ı', else propagate. `callBudget`/`runFuel` bound it for totality. The JAM
-    context `X` is omitted. -/
-def runHost (p : Program) (runFuel : Nat)
-    (f : BitVec 32 → State → Exit × State) : Nat → State → Exit × State
-  | 0,            s => (.cont, s)
-  | callBudget+1, s =>
-    match run p runFuel s with
+theorem run_halt_panic_pc {p : Program} {fuel : Nat} {s : State}
+    (h : (run p fuel s).1 = .halt ∨ (run p fuel s).1 = .panic) : (run p fuel s).2.pc = 0 := by
+  have : ∀ f s, (loop p f s).1 = .halt ∨ (loop p f s).1 = .panic → (loop p f s).2.pc = 0 := by
+    intro f
+    induction f with
+    | zero => simp [loop]
+    | succ f ih =>
+      intro s h
+      unfold loop at h ⊢
+      rcases hst : step p s with ⟨e, s'⟩
+      cases e <;> simp_all
+  unfold run at h ⊢
+  split <;> simp_all
+
+/-- Ψ_H^* (GP ~756); `cont` means `calls` or `fuel` ran out. -/
+def runHost {X : Type} (p : Program) (fuel : Nat) (f : HostFn X) :
+    Nat → State → X → Exit × State × X
+  | 0,         s, x => (.cont, s, x)
+  | calls + 1, s, x =>
+    match run p fuel s with
     | (.host h, s') =>
-      match f h s' with
-      | (.cont, s'') => runHost p runFuel f callBudget { s'' with pc := M.isa.nextPc p s'.pc }
-      | (e'',   s'') => (e'', s'')
-    | other => other
+      match f h s'.gas s'.regs s'.mem x with
+      | (.cont, g, r, m, x') =>
+        runHost p fuel f calls
+          { s' with pc := M.isa.nextPc p s'.pc, gas := g, regs := r, mem := m } x'
+      | (.panic, g, r, m, x') => (.panic, { s' with gas := g, regs := r, mem := m }, x')
+      | (.oog, g, r, m, x')   => (.oog, { s' with gas := g, regs := r, mem := m }, x')
+    | (e, s') => (e, s', x)
+
+/-- Ψ_H handles every host call itself (GP ~787). -/
+theorem runHost_ne_host {X : Type} {p : Program} {fuel : Nat} {f : HostFn X} (h : Val) :
+    ∀ n s x, (runHost p fuel f n s x).1 ≠ .host h
+  | 0, _, _ => by simp [runHost]
+  | n + 1, s, x => by
+    unfold runHost
+    rcases hr : run p fuel s with ⟨e, s'⟩
+    cases e with
+    | host h' =>
+      simp only
+      rcases f h' s'.gas s'.regs s'.mem x with ⟨_ | _ | _, g, r, m, x'⟩
+      · exact runHost_ne_host h n _ _
+      all_goals simp
+    | _ => simp
 
 end PvmModel
 end Pvm

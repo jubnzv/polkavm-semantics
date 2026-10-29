@@ -39,9 +39,9 @@ def execUnlikely (d : Isa) (p : Program) (s : State) : Exit × State :=
 
 /-! ## One immediate -/
 
--- The GP's host id is the 64-bit immed_X (~74, ~311); `Exit.host` keeps its low 32 bits.
--- pc stays at the ecalli (GP ~77).
-def execEcalli (s : State) (x : Val) : Exit × State := (.host (x.setWidth 32), s)
+-- Ψ₁ moves past it (GP ~201); Ψ returns the ecalli's ı (~42).
+def execEcalli (d : Isa) (p : Program) (s : State) (x : Val) : Exit × State :=
+  (.host x, { s with pc := d.nextPc p s.pc })
 
 /-! ## One offset -/
 

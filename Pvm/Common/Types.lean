@@ -34,7 +34,7 @@ inductive Exit
   | panic
   | oog
   | fault (page : Addr)
-  | host  (id : BitVec 32)
+  | host  (id : Val)
   deriving DecidableEq, Repr, Inhabited
 
 /-- RAM `μ`: a byte per 32-bit address, and a permission per page (keyed by `addr >>> pageShift`). -/
