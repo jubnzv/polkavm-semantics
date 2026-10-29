@@ -7,3 +7,4 @@ import Pvm.Spec.ExecControl
 import Pvm.Spec.Gas
 import Pvm.Spec.Model
 import Pvm.Spec.Init
+import Pvm.Spec.Host

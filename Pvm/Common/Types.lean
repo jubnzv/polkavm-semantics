@@ -48,6 +48,16 @@ structure Mem where
 @[inline] def Mem.writeByte (m : Mem) (a : Addr) (b : UInt8) : Mem :=
   { m with value := fun a' => if a' = a then b else m.value a' }
 
+/-- `ℕ_{a..+n} ⊆ V_μ` (GP ~871); no index from 2^32 up has a page. -/
+def Mem.readable (m : Mem) (a n : Nat) : Bool :=
+  n == 0 || a + n ≤ 2 ^ 32 &&
+    (List.range' (a / pageSize) ((a + n - 1) / pageSize + 1 - a / pageSize)).all
+      fun q => m.access (BitVec.ofNat 32 q) != .inaccessible
+
+/-- `μ_{a..+n}`. -/
+def Mem.read (m : Mem) (a n : Nat) : Array UInt8 :=
+  (Array.range n).map fun k => m.value (BitVec.ofNat 32 (a + k))
+
 /-- The Ψ machine configuration. The program blob is threaded separately (see `Program`). -/
 structure State where
   pc      : Addr        -- ı, an octet offset into the instruction data

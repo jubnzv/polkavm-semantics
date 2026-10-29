@@ -20,6 +20,10 @@ inductive HostExit | cont | panic | oog
 abbrev HostFn (X : Type) :=
   Val → Int → (Reg → Val) → Mem → X → HostExit × Int × (Reg → Val) × Mem × X
 
+/-- Ψ_M's result (GP ~857). -/
+inductive Output | ok (o : Array UInt8) | panic | oog
+  deriving DecidableEq, Repr, Inhabited
+
 /-- The per-model interface. -/
 class PvmModel where
   isa     : Isa
@@ -209,6 +213,121 @@ theorem runHost_ne_host {X : Type} {p : Program} {fuel : Nat} {f : HostFn X} (h 
       · exact runHost_ne_host h n _ _
       all_goals simp
     | _ => simp
+
+/-- Ψ_M (GP ~857) with `y` for `Y`; `none` means `fuel` or `calls` ran out. -/
+def runArgs {X : Type} (deblob : Array UInt8 → Option Program)
+    (y : Array UInt8 → Array UInt8 → Option (Array UInt8 × (Reg → Val) × Mem))
+    (b : Array UInt8) (pc : Addr) (gas : Nat) (a : Array UInt8) (f : HostFn X) (x : X)
+    (fuel calls : Nat) : Option (Int × Output × X) :=
+  match y b a with
+  | none => some (0, .panic, x)
+  | some (c, r, m) =>
+    match deblob c with
+    | none => some (0, .panic, x)
+    | some p =>
+      match runHost p fuel f calls { pc, gas, charged := false, regs := r, mem := m } x with
+      | (.cont, _, _) => none
+      | (.oog, s, x') => some (gas - s.gas, .oog, x')
+      | (.halt, s, x') =>
+        let o := (s.reg 7).toNat
+        let n := (s.reg 8).toNat
+        some (gas - s.gas, .ok (if s.mem.readable o n then s.mem.read o n else #[]), x')
+      | (_, s, x') => some (gas - s.gas, .panic, x')
+
+section Gas
+variable {p : Program} (hx : ∀ i s, (M.exec p i s).2.gas = s.gas)
+include hx
+
+omit hx in
+theorem chargeBlock_gas {s : State} (h0 : 0 ≤ s.gas) :
+    0 ≤ (chargeBlock p s).2.gas ∧ (chargeBlock p s).2.gas ≤ s.gas := by
+  unfold chargeBlock
+  split
+  · simpa using h0
+  · dsimp only
+    split
+    · rename_i h; simp only [Int.ofNat_eq_natCast] at h ⊢; omega
+    · simpa using h0
+
+theorem step_gas {s : State} (h0 : 0 ≤ s.gas) :
+    0 ≤ (step p s).2.gas ∧ (step p s).2.gas ≤ s.gas := by
+  have hc := chargeBlock_gas (p := p) h0
+  unfold step
+  cases hi : M.isa.decode p s.pc with
+  | none => simpa using h0
+  | some i =>
+    rcases hcb : chargeBlock p s with ⟨e, s₁⟩
+    rw [hcb] at hc
+    cases e <;> simp only [hx] <;> exact hc
+
+theorem loop_gas : ∀ fuel (s : State), 0 ≤ s.gas →
+    0 ≤ (loop p fuel s).2.gas ∧ (loop p fuel s).2.gas ≤ s.gas
+  | 0, s, h0 => by simpa [loop] using h0
+  | fuel + 1, s, h0 => by
+    have hs := step_gas hx h0
+    unfold loop
+    rcases hst : step p s with ⟨e, s'⟩
+    rw [hst] at hs
+    dsimp only at hs
+    cases e with
+    | cont =>
+      have := loop_gas fuel s' hs.1
+      dsimp only; omega
+    | _ => dsimp only; omega
+
+theorem run_gas {fuel : Nat} {s : State} (h0 : 0 ≤ s.gas) :
+    0 ≤ (run p fuel s).2.gas ∧ (run p fuel s).2.gas ≤ s.gas := by
+  unfold run
+  split
+  · exact loop_gas hx fuel s h0
+  · simpa using h0
+
+theorem runHost_gas {X : Type} {fuel : Nat} {f : HostFn X}
+    (hf : ∀ h g r m x, 0 ≤ g → 0 ≤ (f h g r m x).2.1 ∧ (f h g r m x).2.1 ≤ g) :
+    ∀ n (s : State) x, 0 ≤ s.gas →
+      0 ≤ (runHost p fuel f n s x).2.1.gas ∧ (runHost p fuel f n s x).2.1.gas ≤ s.gas
+  | 0, s, _, h0 => by simpa [runHost] using h0
+  | n + 1, s, x, h0 => by
+    have hr := run_gas hx (fuel := fuel) h0
+    unfold runHost
+    rcases hrun : run p fuel s with ⟨e, s'⟩
+    rw [hrun] at hr
+    dsimp only at hr
+    cases e with
+    | host h =>
+      dsimp only
+      have hg := hf h s'.gas s'.regs s'.mem x hr.1
+      rcases hfx : f h s'.gas s'.regs s'.mem x with ⟨_ | _ | _, g, r, m, x'⟩ <;>
+        rw [hfx] at hg <;> dsimp only at hg ⊢
+      · have := runHost_gas (fuel := fuel) hf n
+          { s' with pc := M.isa.nextPc p s'.pc, gas := g, regs := r, mem := m } x' hg.1
+        dsimp only at this; omega
+      all_goals omega
+    | _ => dsimp only; omega
+
+end Gas
+
+/-- `0 ≤ u ≤ ϱ` (GP ~881) when no instruction or host call raises ξ or takes it below 0. -/
+theorem runArgs_gas {X : Type} {deblob : Array UInt8 → Option Program}
+    {y : Array UInt8 → Array UInt8 → Option (Array UInt8 × (Reg → Val) × Mem)}
+    {b : Array UInt8} {pc : Addr} {gas : Nat} {a : Array UInt8} {f : HostFn X} {x x' : X}
+    {fuel calls : Nat} {u : Int} {o : Output}
+    (hx : ∀ p i s, (M.exec p i s).2.gas = s.gas)
+    (hf : ∀ h g r m x, 0 ≤ g → 0 ≤ (f h g r m x).2.1 ∧ (f h g r m x).2.1 ≤ g)
+    (h : runArgs deblob y b pc gas a f x fuel calls = some (u, o, x')) : 0 ≤ u ∧ u ≤ gas := by
+  unfold runArgs at h
+  rcases hy : y b a with _ | ⟨c, r, m⟩
+  · simp only [hy, Option.some.injEq, Prod.mk.injEq] at h; omega
+  rcases hd : deblob c with _ | p
+  · simp only [hy, hd, Option.some.injEq, Prod.mk.injEq] at h; omega
+  have hg := runHost_gas (hx p) hf (fuel := fuel) calls
+    { pc, gas, charged := false, regs := r, mem := m } x (by simp)
+  rcases hrh : runHost p fuel f calls { pc, gas, charged := false, regs := r, mem := m } x
+    with ⟨e, s, x''⟩
+  rw [hrh] at hg
+  dsimp only at hg
+  simp only [hy, hd, hrh] at h
+  cases e <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h <;> omega
 
 end PvmModel
 end Pvm
