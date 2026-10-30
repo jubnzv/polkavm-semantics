@@ -1,8 +1,8 @@
 /-
 Spec model — gasCost: ϱ^Δ (GP ~998), the 𝔛 simulation (~1010) over the cost tables (~1134).
 
-The GP tests `move_reg` (~1029), T (~1064) and `trap`/`unlikely` (~1178) on raw octets in its own
-numbering. These test the decoded instruction; an ı without one counts as `trap`.
+The GP tests `move_reg` (~1029) and T (~1064) on raw octets in its own numbering. These test the
+decoded instruction; an ı without one counts as `trap`. `𝔟` (~1178) tests raw octets as the GP does.
 -/
 import Pvm.Common.Isa
 
@@ -100,15 +100,14 @@ def uS : Units := ⟨1, 0, 1, 0, 0⟩
 def uM : Units := ⟨1, 0, 0, 1, 0⟩
 def uD : Units := ⟨1, 0, 0, 0, 1⟩
 
-def trapOrUnlikelyAt (d : Isa) (p : Program) (j : Nat) : Bool :=
-  j ≥ 2 ^ 32 ||
-    match d.decode p (BitVec.ofNat 32 j) with
-    | none | some .trap | some .unlikely => true
-    | _ => false
+/-- ζ_j ∈ {trap, unlikely} (GP ~1178); ζ ≡ c ⌢ [0, 0, …] (~103). -/
+def trapOrUnlikelyAt (p : Program) (j : Nat) : Bool :=
+  let x := p.code[j]?.getD 0
+  x == 0 || x == 2
 
 /-- 𝔟 (~1175). -/
 def bcost (d : Isa) (p : Program) (pc : Addr) (t : Val) : Nat :=
-  if trapOrUnlikelyAt d p (d.nextPc p pc).toNat || trapOrUnlikelyAt d p t.toNat then 1 else 20
+  if trapOrUnlikelyAt p (d.nextPc p pc).toNat || trapOrUnlikelyAt p t.toNat then 1 else 20
 
 /-- A row of the cost table (GP ~1223). -/
 structure Row where

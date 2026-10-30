@@ -16,7 +16,7 @@ Deliberately simplified or omitted:
 * **`memset`, `sbrk`** -- not modelled.
 
 ## Departures from the Graypaper
-* `𝔛` and `𝔟` test decoded instructions, not the GP's opcode octets; no valid instruction counts as `trap`.
+* `𝔛` tests decoded instructions, not the GP's opcode octets; no valid instruction counts as `trap`.
 * An index below `2^16` always panics, as the prose says (see [graypaper#446](https://github.com/gavofyork/graypaper/issues/446)).
 * `𝔏` returns `0` when no block start is at or below `pc`.
 * `Y` gives `∅` for `|a| > Z_I`, outside its domain.
